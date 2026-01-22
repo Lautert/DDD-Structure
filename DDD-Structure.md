@@ -1,3 +1,39 @@
+## Key Principles from the Guide
+- DDD Structure Overview: Each module represents a bounded context (e.g., user, profile) with its own domain, application, and adapter layers. Modules should be loosely coupled, with dependencies flowing inward toward the domain layer (the core business logic).
+
+- Layer Independence: The domain layer must remain completely infrastructure-independent (no JPA, Spring, or HTTP dependencies). The application layer orchestrates domain operations and handles cross-cutting concerns (e.g., transactions, events). The adapter layer deals with external concerns (e.g., persistence, web).
+
+- Dependency Direction: Higher layers (application/adapter) can depend on lower layers (domain), but not vice versa. Inter-module dependencies should prioritize domain abstractions to avoid tight coupling.
+
+- Hexagonal Architecture: Modules communicate via ports (interfaces in the domain layer), allowing the domain to be driven by or drive external adapters without knowing implementation details.
+
+## How Modules Should Interact (Inter-Module Dependencies)
+In DDD, when one module (e.g., user) needs to use functionality from another (e.g., profile), it should not directly depend on the other module's application or adapter layers. Instead, it should depend on the domain layer of the other module to maintain architectural integrity. This ensures:
+
+- The domain remains the core and independent.
+- Changes in application logic (e.g., REST endpoints) don't ripple across modules.
+- Testability is preserved (you can mock domain services easily).
+
+**❌ (Think): If a domain extends other module application/adapter it still a pure domain?**
+
+
+### Cross-Cutting Concerns (Policies, Events)
+- If access control (policies) or events are needed, handle them in the application layer of the calling module (e.g., UserUseCase can apply policies before calling UserDomainService).
+- The guide states: "❌ Access control in Domain - Use Policies in Application layer."
+
+## Layer Hierarchy
+
+1. application
+2. adapter
+3. domain
+
+**IMPORTANT: Higher layers (application/adapter) can depend on lower layers (domain) but not vice versa**
+
+---
+
+## DDD Structure
+
+<pre>
 {Entity}/
 ├── _rules/                                       # 📜 Documentação e regras do módulo (não faz parte do DDD, mas auxilia na governança)
 │   └── rules.md
@@ -55,8 +91,8 @@
 ├── domain/                                       # 💎 DOMAIN LAYER - Coração do DDD (Core Business Logic)
 │   │                                             #    Contém TODA a lógica de negócio e regras do domínio
 │   │                                             #    INDEPENDENTE de frameworks, BD e infraestrutura
-│   │                                             #    Ele não se importa com autenticação, apenas aplicar a regra de negócio
-│   │                                             #    Ele recebe os dados processa gera um output, mas não se importa com a 
+│   │                                             #    Ele não se importa com autenticação, apenas aplicar a regra do que esta representando
+│   │                                             #    Ele recebe os dados processa e gera um output, mas não se importa com a 
 │   │                                             #    origem ou destino desses dados
 │   │
 │   ├── event/                                    # 📢 Domain Events - Eventos que representam fatos de negócio
@@ -92,7 +128,7 @@
 │   │       │                                     #    Definidos apenas por seus atributos
 │   │       │                                     #    Validações e comportamentos relacionados aos atributos
 │   │       ├── Email.java                        #    Email com validação de formato
-│   │       ├── PersonalInfo.java                 #    Informações pessoais agrupadas
+│   │       ├── PersonalInfo.java                 #    Informações pessoais agrupadas (Validações "no construtor")
 │   │       └── SocialNetworkProfile.java         #    Perfil de rede social
 │   │
 │   ├── repository/                               # 🗄️ Repository Interfaces - Contratos de persistência
@@ -130,3 +166,45 @@
 └── types/
     ├── ECandidateEducationLevel.java            # Education level enum (13 values)
     └── ECandidateLanguageProficiency.java       # Language proficiency enum (7 values)
+</pre>
+
+---
+
+## Domain example
+
+```java
+// In user module's domain service (e.g., UserDomainService.java)
+@Service
+public class UserDomainService {
+
+    private final IProfileDomainService profileDomainService;  // Import interface from profile module's domain layer
+
+    @Autowired
+    public UserDomainService(ProfileDomainService profileDomainService) {
+        this.profileDomainService = profileDomainService;
+    }
+
+    public UserEntity registerUser(String email, String profileData) {
+        // Domain logic for user registration
+        UserEntity user = new UserEntity(email);
+        
+        // Call profile domain service for profile-related operations
+        ProfileEntity profile = profileDomainService.createProfile(profileData);
+        
+        // Associate and save user
+        user.setProfile(profile);
+        return repository.save(user);
+    }
+}
+```
+
+```java
+// DON'T DO THIS - Violates layer boundaries
+@Service
+public class UserDomainService {
+
+    private final ProfileUseCase profileUseCase;  // Wrong: Application layer dependency
+
+    // This would force user domain to know about DTOs, mappers, etc.
+}
+``
